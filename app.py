@@ -1,159 +1,142 @@
 import streamlit as st
 import pandas as pd
+import pdfplumber
+import pytesseract
+from PIL import Image
+from fpdf import FPDF
 import io
 import datetime
-from fpdf import FPDF
-import xlsxwriter 
 
-# --- ENTERPRISE CONFIG ---
+# --- ENTERPRISE CONFIGURATION ---
 st.set_page_config(page_title="Axiom Enterprise Core", page_icon="🏢", layout="wide")
 
-# --- SESSION STATE ---
+# --- SESSION STATE (LOGIN) ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- MODULE 1: THE SILENT FIXER (Brain) ---
-def smart_fix_data(df):
-    """
-    Silently fixes files that are comma-separated or missing headers.
-    """
-    # 1. Fix "Stuck in Column A" (Comma Separation)
-    if df.shape[1] == 1:
-        try:
-            # Split Column A by comma
-            first_col = df.iloc[:, 0].astype(str)
-            df = first_col.str.split(',', expand=True)
-        except:
-            pass
-
-    # 2. Fix "Missing Headers" (If Row 1 is data like '101')
-    # Check if the first cell is a number (like 101)
-    try:
-        first_cell = str(df.iloc[0, 0])
-        if first_cell.isdigit():
-            # The user uploaded raw data without headers. 
-            # We will manually assign the correct headers based on your data format.
-            # Your Format: ID, Name, Loan, Collateral, Extra
-            new_headers = ["Loan_ID", "Customer_Name", "Loan_Amount", "Collateral_Value", "Cash_Paid"]
-            
-            # Ensure we don't have more columns than headers
-            if df.shape[1] > len(new_headers):
-                new_headers += [f"Extra_{i}" for i in range(df.shape[1] - len(new_headers))]
-            elif df.shape[1] < len(new_headers):
-                new_headers = new_headers[:df.shape[1]]
-                
-            df.columns = new_headers
-    except:
-        pass
-
-    return df
-
-# --- MODULE 2: PDF GENERATOR ---
+# --- MODULE 1: PDF CERTIFICATE GENERATOR ---
 def generate_pdf(df, violations):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
+    
+    # Header
     pdf.cell(200, 10, txt="Axiom Risk Compliance Certificate", ln=True, align='C')
     pdf.set_font("Arial", size=10)
-    pdf.cell(200, 10, txt=f"Date: {datetime.datetime.now().strftime('%Y-%m-%d')}", ln=True, align='C')
+    pdf.cell(200, 10, txt=f"Audit Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
     pdf.ln(10)
     
-    pdf.set_font("Arial", size=12)
-    # Handle clean up for PDF text
-    total_val = df['Loan_Amount'].sum()
-    pdf.cell(200, 10, txt=f"Total Portfolio: INR {total_val:,.2f}", ln=True)
-    pdf.cell(200, 10, txt=f"Risk Violations: {len(violations)}", ln=True)
+    # Executive Summary
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 10, txt="Executive Summary", ln=True)
+    pdf.set_font("Arial", size=11)
+    pdf.cell(200, 10, txt=f"Total Portfolio Value: INR {df['Loan_Amount'].sum():,.2f}", ln=True)
+    pdf.cell(200, 10, txt=f"Total Files Audited: {len(df)}", ln=True)
+    pdf.cell(200, 10, txt=f"Risk Breaches Found: {len(violations)}", ln=True)
+    pdf.ln(10)
     
+    # Status
     if len(violations) > 0:
         pdf.set_text_color(200, 0, 0)
-        pdf.cell(200, 10, txt="STATUS: HIGH RISK DETECTED", ln=True)
+        pdf.cell(200, 10, txt="AUDIT STATUS: FAILED - HIGH RISK DETECTED", ln=True)
     else:
         pdf.set_text_color(0, 150, 0)
-        pdf.cell(200, 10, txt="STATUS: COMPLIANT", ln=True)
+        pdf.cell(200, 10, txt="AUDIT STATUS: PASSED - COMPLIANT", ln=True)
+        
     return pdf.output(dest='S').encode('latin-1')
 
-# --- MODULE 3: LOGIN ---
+# --- MODULE 2: LOGIN SYSTEM ---
 def login():
     st.markdown("<h1 style='text-align: center;'>🏢 Axiom Secure Portal</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Restricted Access for Audit Officers</p>", unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1,1,1])
     with col2:
         username = st.text_input("Officer ID")
         password = st.text_input("Secure Key", type="password")
-        if st.button("Authenticate", use_container_width=True):
+        if st.button("Authenticate"):
             if username == "admin" and password == "admin":
                 st.session_state['logged_in'] = True
                 st.rerun()
             else:
                 st.error("❌ Access Denied")
 
-# --- MODULE 4: DASHBOARD ---
+# --- MODULE 3: MAIN DASHBOARD ---
 def dashboard():
+    # Sidebar
     with st.sidebar:
         st.title("Axiom Nav")
         if st.button("Log Out"):
             st.session_state['logged_in'] = False
             st.rerun()
+        st.info("System Status: ● Online")
 
+    # Main Screen
     st.title("📊 Enterprise Risk Dashboard")
-    uploaded_file = st.file_uploader("Upload Loan Tape", type=["xlsx", "csv"])
+    st.write("Upload Standardized Loan Tape (Excel/CSV)")
+
+    uploaded_file = st.file_uploader("Upload File", type=["xlsx", "csv"])
 
     if uploaded_file:
+        # 1. READ FILE STRICTLY
         try:
-            # 1. LOAD DATA
             if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file, header=None) # Assume no header first
+                df = pd.read_csv(uploaded_file)
             else:
-                df = pd.read_excel(uploaded_file, header=None)
-
-            # 2. RUN SILENT FIXER (The Logic for YOUR file)
-            df = smart_fix_data(df)
+                df = pd.read_excel(uploaded_file)
             
-            # 3. VERIFY & AUDIT
-            # Ensure numbers are actual numbers (remove any stray text)
-            if 'Loan_Amount' in df.columns:
-                df['Loan_Amount'] = pd.to_numeric(df['Loan_Amount'], errors='coerce')
-            if 'Collateral_Value' in df.columns:
-                df['Collateral_Value'] = pd.to_numeric(df['Collateral_Value'], errors='coerce')
+            # 2. VALIDATE COLUMNS (Professional Check)
+            required_cols = ['Loan_Amount', 'Collateral_Value']
+            missing = [c for c in required_cols if c not in df.columns]
             
-            # Drop bad rows
-            df = df.dropna(subset=['Loan_Amount', 'Collateral_Value'])
-
-            if not df.empty:
-                # AUDIT LOGIC
+            if missing:
+                st.error(f"❌ REJECTED: Invalid File Format. Missing columns: {missing}")
+                st.warning("Please upload the 'Standard_Audit_Template.xlsx'")
+            
+            else:
+                # 3. RUN AUDIT LOGIC
                 df['LTV'] = (df['Loan_Amount'] / df['Collateral_Value']) * 100
                 df['Status'] = df['LTV'].apply(lambda x: 'High Risk' if x > 75 else 'Safe')
+                
                 violations = df[df['Status'] == 'High Risk']
                 
-                # METRICS
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Total Value", f"₹ {df['Loan_Amount'].sum()/100000:.2f} L")
-                m2.metric("Violations", len(violations))
-                m3.metric("Safe Loans", len(df)-len(violations))
+                # 4. SHOW PROFESSIONAL METRICS
+                st.success("✅ File Validated & Processed")
+                st.markdown("---")
                 
-                # CHARTS
-                c1, c2 = st.columns([2,1])
+                # Top Metrics
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Total Portfolio", f"₹ {df['Loan_Amount'].sum()/100000:.2f} L")
+                m2.metric("Total Files", len(df))
+                m3.metric("Safe Loans", len(df) - len(violations))
+                m4.metric("Risk Alerts", len(violations), delta_color="inverse")
+                
+                # 5. CHARTS (The Visuals)
+                c1, c2 = st.columns([2, 1])
                 with c1:
+                    st.subheader("Risk Distribution")
                     st.bar_chart(df['Status'].value_counts(), color=["#FF4B4B", "#00CC96"])
                 with c2:
+                    st.subheader("LTV Trends")
                     st.line_chart(df['LTV'])
                 
-                # PDF
-                if st.button("Generate Certificate"):
-                    pdf = generate_pdf(df, violations)
-                    st.download_button("Download PDF", pdf, "Certificate.pdf", "application/pdf")
-                    
+                # 6. REPORTING
+                st.write("### 🚨 Breach Report")
                 if not violations.empty:
-                    st.error("Risky Loans Detected:")
                     st.dataframe(violations.style.applymap(lambda x: 'color: red', subset=['Status']))
                 else:
-                    st.success("✅ All Loans are Safe")
-            else:
-                st.error("❌ Could not read data. Please use the Standard Template.")
+                    st.success("No Violations Found.")
+
+                # PDF Button
+                st.write("---")
+                if st.button("Generate Official Audit Certificate"):
+                    pdf_bytes = generate_pdf(df, violations)
+                    st.download_button("Download Certificate (PDF)", pdf_bytes, "Axiom_Certificate.pdf", "application/pdf")
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"System Error: {e}")
 
-# --- RUN ---
+# --- APP START ---
 if st.session_state['logged_in']:
     dashboard()
 else:
