@@ -1,4 +1,4 @@
-import streamlit as st
+8import streamlit as st
 import pandas as pd
 import pdfplumber
 import pytesseract
@@ -139,52 +139,76 @@ def dashboard():
                 else:
                     df = pd.read_excel(uploaded_file)
             
-            # AUDIT LOGIC
+                        # AUDIT LOGIC
             if not df.empty:
                 st.success("✅ Data Structure Identified")
                 
-                # Normalize Columns
-                cols = [c for c in df.columns if "Amount" in str(c) or "Collateral" in str(c)]
-                if len(cols) < 2 and 'Loan_Amount' not in df.columns:
-                    st.warning("⚠️ Auto-Mapping Columns...")
-                    # Basic logic to find numeric columns if names are missing
-                    num_df = df.select_dtypes(include=['number'])
-                    if num_df.shape[1] >= 2:
-                        df['Loan_Amount'] = num_df.iloc[:, 0]
-                        df['Collateral_Value'] = num_df.iloc[:, 1]
+                # Normalize Columns (Smart Mapping)
+                # ... [Keep your existing column mapping logic here if you want, or use this block] ...
+                num_df = df.select_dtypes(include=['number'])
+                if 'Loan_Amount' not in df.columns and num_df.shape[1] >= 2:
+                    df['Loan_Amount'] = num_df.iloc[:, 0]
+                    df['Collateral_Value'] = num_df.iloc[:, 1]
                 
                 if 'Loan_Amount' in df.columns and 'Collateral_Value' in df.columns:
-                    # RISK ALGORITHM
+                    # 1. CALCULATE RISK
                     df['LTV'] = (df['Loan_Amount'] / df['Collateral_Value']) * 100
-                    df['Risk_Score'] = df['LTV'].apply(lambda x: 'CRITICAL' if x > 75 else 'Safe')
+                    df['Status'] = df['LTV'].apply(lambda x: 'CRITICAL RISK' if x > 75 else 'Compliant')
                     
-                    violations = df[df['Risk_Score'] == 'CRITICAL']
+                    violations = df[df['Status'] == 'CRITICAL RISK']
+                    safe_loans = df[df['Status'] == 'Compliant']
                     
-                    # DISPLAY RESULTS
-                    st.write("### 📉 Risk Analysis Report")
+                    # 2. PROFESSIONAL VISUAL DASHBOARD (The New Feature)
+                    st.markdown("## 📊 Executive Audit Dashboard")
                     
-                    c1, c2 = st.columns(2)
-                    c1.metric("Total Exposure", f"₹ {df['Loan_Amount'].sum():,.0f}")
-                    c2.metric("Critical Violations", len(violations), delta_color="inverse")
+                    # A. Metrics Row
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Total Portfolio", f"₹ {df['Loan_Amount'].sum()/100000:.2f} L")
+                    m2.metric("Files Audited", len(df))
+                    m3.metric("Compliant Loans", len(safe_loans))
+                    m4.metric("Risk Alerts", len(violations), delta="-High Risk" if not violations.empty else "Safe")
                     
+                    st.write("---")
+
+                    # B. Visual Charts (Native Streamlit Charts)
+                    c1, c2 = st.columns([2, 1])
+                    
+                    with c1:
+                        st.subheader("Risk Distribution")
+                        # Bar Chart of Risk vs Safe
+                        chart_data = df['Status'].value_counts()
+                        st.bar_chart(chart_data, color=["#FF4B4B", "#00CC96"]) # Red for Risk, Green for Safe
+
+                    with c2:
+                        st.subheader("LTV Spectrum")
+                        # Line chart showing LTV spikes
+                        st.line_chart(df['LTV'])
+                        st.caption("Spikes above 75% indicate violations.")
+
+                    # 3. DETAILED DATA TABLE
+                    st.write("### 📉 Detailed Account Analysis")
                     if not violations.empty:
-                        st.error(f"🚨 ALERT: {len(violations)} Loans Exceed RBI LTV Guidelines")
-                        st.dataframe(violations.style.applymap(lambda x: 'background-color: #ffcdd2' if x == 'CRITICAL' else '', subset=['Risk_Score']))
+                        st.error(f"🚨 ACTION REQUIRED: {len(violations)} Accounts Exceed Regulatory Limits")
+                        st.dataframe(violations.style.applymap(lambda x: 'background-color: #ffcdd2; color: black', subset=['Status']))
                     else:
-                        st.success("✅ All Accounts Compliant with RBI Guidelines")
+                        st.success("✅ Audit Passed: All Accounts adhere to RBI Guidelines")
                         st.dataframe(df)
 
-                    # REPORT GENERATION
+                    # 4. REPORT GENERATION
                     st.write("---")
-                    st.subheader("📑 Official Reporting")
-                    if st.button("Generate Compliance Certificate (PDF)"):
+                    st.subheader("📑 Compliance Certification")
+                    if st.button("Generate Signed PDF Report"):
                         pdf_bytes = generate_pdf(df, violations)
                         st.download_button(
-                            label="⬇️ Download Signed Certificate",
+                            label="⬇️ Download Official Certificate",
                             data=pdf_bytes,
-                            file_name="Axiom_Compliance_Cert.pdf",
+                            file_name="Axiom_Audit_Certificate.pdf",
                             mime="application/pdf"
                         )
+                    
+                    # 5. LEGAL FOOTER
+                    st.markdown("---")
+                    st.caption("🔒 CONFIDENTIAL: This report is for internal compliance use only. Generated by Axiom Enterprise Core.")
                 else:
                     st.error("❌ Data Unreadable: Could not identify financial columns.")
 
