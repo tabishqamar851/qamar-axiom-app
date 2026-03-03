@@ -1,1 +1,0 @@
-# qamar-axiom-app
